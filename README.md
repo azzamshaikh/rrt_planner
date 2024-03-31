@@ -4,7 +4,15 @@ This repository contains code implementing an RRT planner. The implementation of
 
 ## Planner Path
 
+The following shows the path found by the planner to remove the mainshaft.
+
 ![Alt Text](./media/Path_Animation.gif)
+
+## RRT Graph
+
+The following shows the tree structure generated while searching for the path. 
+
+![Alt Text](./media/RRT_Graph_Isometric.png)
 
 ## Dependencies
 
