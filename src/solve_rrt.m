@@ -1,19 +1,36 @@
 clc;clear; close all
 
-% Run RRT 
+% ========================================================================
+%                            Main Code 
+% ========================================================================
+
+% Load models and initialize a plot figure
 [start_pose,goal_pose,transCase,counterShaft] = load_and_plot_models();
+
+% Run RRT algorithm
 goal = solveRRT(start_pose,goal_pose,transCase,counterShaft);
+
+% Get path from solution
 [node_path, pose_path] = returnPath(goal);
 hold off
 
-% Generating animation
+% Generate animation
 create_animation(node_path,transCase,counterShaft)
 
+% ========================================================================
+%                             Functions
+% ========================================================================
+
 function update_plot(node,color)
+    % Function to update the plot with a 3D point
     plot3(node.pose(1),node.pose(2),node.pose(3),'x',"Color",color)
 end
 
 function [start_pose,goal_pose,transCase,counterShaft] = load_and_plot_models()
+    % Function to load and place the tranmission rigid body tree, the case,
+    % and the countershaft
+    % Returns the start and goal poses along with the collision objects of
+    % the case and the counter shaft
     trans = createTransmissionRBT();
     start_pose = [0 820 480 0 0 0] ; % x y z r (about x) p (about y)  y (about z)
     goal_pose = [0 660 850 0 0 0];
@@ -30,39 +47,38 @@ function [start_pose,goal_pose,transCase,counterShaft] = load_and_plot_models()
 end
 
 function goal = solveRRT(start_pose,goal_pose,transCase,counterShaft)
-    % initialization
-    start = create_node(start_pose);
-    goal = create_node(goal_pose);
-    update_plot(start,'r')
-    update_plot(goal,'b')
-    node_list = [start];
+    % Initialization of the RRT
+    start = create_node(start_pose); % Create a node out of the start pose
+    goal = create_node(goal_pose);   % Create a node out of the goal pose
+    update_plot(start,'r')           % Update the plot with the start node
+    update_plot(goal,'b')            % Update the plot with the goal node
+    node_list = [start];             % Create a new node list for the algorithm
     
-    % solving RRT
-    for ii = 1:3000
-        sampleNode = sample();
-        update_plot(sampleNode,'g')
-        nearestNode = find_nearest_neighbor(sampleNode,node_list);
-        newNode = apply_local_planner(nearestNode,sampleNode);
-        isColliding = robotCollisionCheck(newNode,transCase,counterShaft);
-        if isColliding
+    % Solving RRT
+    for ii = 1:3000 % Run for a tree depth of 3000 iterations
+        sampleNode = sample();          % Get a sample from the space
+        update_plot(sampleNode,'g')     % Update the plot with the sample
+        nearestNode = find_nearest_neighbor(sampleNode,node_list);          % Obtain the nearest neighbor
+        newNode = apply_local_planner(nearestNode,sampleNode);              % Apply the local planner 
+        isColliding = robotCollisionCheck(newNode,transCase,counterShaft);  % Run a collision check
+        if isColliding  % If colliding, continue
             % disp('Collision detected')
             continue
-        else
-            update_plot(newNode,'r')
-            node_list(end+1) = newNode;
-            line([nearestNode.pose(1) newNode.pose(1)],[nearestNode.pose(2) newNode.pose(2)],[nearestNode.pose(3) newNode.pose(3)],'Color','b')
-            if Euclidean(newNode,goal) < 50
+        else            % If not colliding, node is valid
+            update_plot(newNode,'r')    % Update the plot with the new node
+            node_list(end+1) = newNode; % Add the new node to the end 
+            line([nearestNode.pose(1) newNode.pose(1)],[nearestNode.pose(2) newNode.pose(2)],[nearestNode.pose(3) newNode.pose(3)],'Color','b') % Create a line between the new node and nearest node
+            if Euclidean(newNode,goal) < 50 % If the goal is within 50 mm, the goal is reached
                 disp('Reached goal')
                 goal.parent = newNode;
                 break
             end
         end    
     end
-
-
 end
 
 function create_animation(node_path,transCase,counterShaft)
+    % Function for creating an animation of the motion
     visual = figure();
     xlim([-300 300] )
     ylim([-100 850] )
@@ -96,6 +112,7 @@ function create_animation(node_path,transCase,counterShaft)
 end
 
 function [node_path, pose_path] = returnPath(goal)
+    % Function for obtaining the path sequence
     node_path = [goal];
     pose_path = [goal.pose];
     parent = goal.parent;
@@ -110,22 +127,29 @@ end
 
 
 function node = create_node(pose)
+    % Function for creating a node. A node is a struct with a position and
+    % a parent index
     node.pose = pose;
     node.parent = -1;
 end
 
 function node = sample()
+    % Function for obtaining a sample from the free space
+
+    % Assign limits from where to select points
     xlimits = [-100 100];
     ylimits = [400 900];
     zlimits = [250 1000];
     roll_limits = [-pi/3 pi/3];
     
     function val = random_value_in_range(range)
+        % Function for getting a random value from the range
         min = range(1);
         max = range(2);
         val = (max-min)*rand(1) + min;
     end
 
+    % Get random points and return the sampled node
     rand_x = random_value_in_range(xlimits);
     rand_y = random_value_in_range(ylimits);
     rand_z = random_value_in_range(zlimits);
@@ -135,16 +159,24 @@ function node = sample()
 end
 
 function node = find_nearest_neighbor(currentNode, node_list)
+    % Function to find the nearest neighbor 
+    distances_list = get_distance_list(currentNode, node_list); % Get a list of neighbors and their distances from the current node
+    [min_val, index] = min(distances_list); % Find the smallest distance node
+    node = node_list(index); % Return the node that is closest
+end
+
+function list = get_distance_list(currentNode, node_list)
+    % Function to get a list of nodes that describe the position of a
+    % node relative to the current node
     list = [];
     for ii = 1:length(node_list)
         euclid = Euclidean(currentNode, node_list(ii));
         list(ii) = euclid;
     end
-    [min_val, index] = min(list);
-    node = node_list(index);
 end
 
 function value = Euclidean(node1,node2)
+    % Function to calculate the euclidean distance between two nodes
     xsquared = (node1.pose(1)-node2.pose(1))^2;
     ysquared = (node1.pose(2)-node2.pose(2))^2;
     zsquared = (node1.pose(3)-node2.pose(3))^2;
@@ -152,16 +184,20 @@ function value = Euclidean(node1,node2)
 end
 
 function node = apply_local_planner(nearest,sample)
-    node = create_node([0 0 0 0 0 0]);
-    motion = sample.pose - nearest.pose;
-    linear_ratio = 0.25;
-    node.pose = nearest.pose + motion*linear_ratio;
-    node.parent = nearest;
+    % Function to apply the local planner
+    node = create_node([0 0 0 0 0 0]);              % Create an empty node
+    motion = sample.pose - nearest.pose;            % Get the motion vector
+    linear_ratio = 0.25;                            % Set a ratio 
+    node.pose = nearest.pose + motion*linear_ratio; % Obtain the new node position 
+    node.parent = nearest;                          % Assign the parent of the new node as the nearest node
 end
 
 function transmission = createTransmissionRBT()
+    % Function to create a rigidbodytree of the tranmission
     transmission = rigidBodyTree;
     
+    % Set DH params to assign offset values. Additional distances were
+    % required to have bodies aligned properly
     dhparam = [0 pi/2 0 0,
                0 0 236/2 0,
                0 0 214+11 0,
@@ -169,7 +205,7 @@ function transmission = createTransmissionRBT()
                0 0 70+15 0,
                0 0 40+15 0];
     
-    
+    % Create body, joint, and collisions of the rigidbodytree
     body0 = rigidBody('body0');
     jnt0 = rigidBodyJoint('jnt0','revolute');
     setFixedTransform(jnt0,dhparam(1,:),"dh");
@@ -178,10 +214,8 @@ function transmission = createTransmissionRBT()
     
     body1 = rigidBody('body1');
     jnt1 = rigidBodyJoint('jnt1','fixed');
-    % jnt1.JointAxis = [0 1 0];
     setFixedTransform(jnt1,dhparam(2,:),"dh");
     body1.Joint = jnt1;
-    %addVisual(body1,"Cylinder",[72/2 236]);
     addCollision(body1,"Cylinder",[72/2 236]);
     addBody(transmission,body1,"body0");
     
@@ -189,7 +223,6 @@ function transmission = createTransmissionRBT()
     jnt2 = rigidBodyJoint('jnt2','fixed');
     setFixedTransform(jnt2,dhparam(3,:),"dh");
     body2.Joint = jnt2;
-    %addVisual(body2,"Cylinder",[260/2 214]);
     addCollision(body2,"Cylinder",[240/2 214]);
     addBody(transmission,body2,'body1');
     
@@ -197,7 +230,6 @@ function transmission = createTransmissionRBT()
     jnt3 = rigidBodyJoint('jnt3','fixed');
     setFixedTransform(jnt3,dhparam(4,:),"dh");
     body3.Joint = jnt3;
-    %addVisual(body3,"Cylinder",[180/2 100])
     addCollision(body3,"Cylinder",[180/2 100])
     addBody(transmission,body3,"body2")
     
@@ -205,7 +237,6 @@ function transmission = createTransmissionRBT()
     jnt4 = rigidBodyJoint('jnt4','fixed');
     setFixedTransform(jnt4,dhparam(5,:),"dh");
     body4.Joint = jnt4;
-    %addVisual(body4,"Cylinder",[239/2 70])
     addCollision(body4,"Cylinder",[239/2 70])
     addBody(transmission,body4,"body3")
     
@@ -213,22 +244,21 @@ function transmission = createTransmissionRBT()
     jnt5 = rigidBodyJoint('jnt5','fixed');
     setFixedTransform(jnt5,dhparam(6,:),"dh");
     body5.Joint = jnt5;
-    %addVisual(body5,"Cylinder",[72/2 40])
     addCollision(body5,"Cylinder",[72/2 40])
     addBody(transmission,body5,"body4")
-
 end
 
 function new_trans = offset_transmission(transmission,pose)
+    % Function to assign a new pose to the tranmission rigidbodytree
     new_trans = rigidBodyTree("DataFormat","column");
     rb = rigidBody('newBase');
-    
     rb.Joint.setFixedTransform(trvec2tform(pose(1:3))*axang2tform([1 0 0 pose(4)])*axang2tform([0 1 0 pose(5)])*axang2tform([0 0 1 pose(6)]));
     new_trans.addBody(rb,'base')
     new_trans.addSubtree('newBase',transmission)
 end
 
 function dummy_trans = collision_tranmission(node)
+    % Function to create a transmission for the collision check function
     transmission = createTransmissionRBT();
     dummy_trans = rigidBodyTree("DataFormat","column");
     rb = rigidBody('newBase');
@@ -236,10 +266,11 @@ function dummy_trans = collision_tranmission(node)
     rb.Joint.setFixedTransform(trvec2tform(pose(1:3))*axang2tform([1 0 0 pose(4)])*axang2tform([0 1 0 pose(5)])*axang2tform([0 0 1 pose(6)]));
     dummy_trans.addBody(rb,'base')
     dummy_trans.addSubtree('newBase',transmission)
-
 end
 
 function bool = robotCollisionCheck(newNode,trans_case,counter_shaft)
+    % Function to check for collisions between the tranmission and the
+    % case/countershaft at a specific node
     transmission = collision_tranmission(newNode);
     % disp('case and main shaft')
     val = checkCollision(transmission,homeConfiguration(transmission),trans_case,"IgnoreSelfCollision","on");
@@ -256,23 +287,8 @@ function bool = robotCollisionCheck(newNode,trans_case,counter_shaft)
     bool = false;
 end
 
-function bool = collisionCheck(obj1,obj2)
-    for ii = 1:length(obj1)
-        for jj = 1:length(obj2)
-            val = checkCollision(obj1{ii},obj2{jj});
-            if val == 0
-                bool = false;                
-            elseif val == 1
-                bool = true;
-                return 
-            end
-        end
-    end
-    bool = false;
-    return
-end
-
 function transmissionCase = createCase()
+    % Function to create the transmission case
     rightWall = createWall(660-12.5);
     leftWall = createWall(0+12.5);
     base = createBase;
@@ -288,6 +304,7 @@ function transmissionCase = createCase()
 end
 
 function plotcase(transCase)
+    % Function to plot the tranmission case
     for i = 1:length(transCase)
         wall = transCase{i};
         [ax,patchobj] = show(wall);
@@ -297,6 +314,7 @@ function plotcase(transCase)
 end
 
 function base = createBase()
+    % Function to create the base of the case
     base = collisionBox(420-50,660-50,25);
     base.Pose = [0 0 0 0;
                   0 0 0 660/2;
@@ -305,6 +323,7 @@ function base = createBase()
 end
 
 function sideWall = createSideWall(x_pose)
+    % Function to create the sidewall of the case
     sideWall = collisionBox(25,660-50,650);
     sideWall.Pose = [0 0 0 x_pose;
                   0 0 0 610/2+25;
@@ -314,6 +333,7 @@ end
 
 
 function wall = createWall(y_pose)
+    % Function to create the walls with the shaft bearings
     bottom = collisionBox(420,25,170);
     bottom.Pose = [0 0 0 0;
                   0 0 0 y_pose;
@@ -362,6 +382,7 @@ function wall = createWall(y_pose)
 end
 
 function plotCounterShaft(counterShaft)
+    % Function to plot the countershaft
     for i = 1:length(counterShaft)
         cyl = counterShaft{i};
         [ax,patchobj] = show(cyl);
@@ -371,6 +392,7 @@ function plotCounterShaft(counterShaft)
 end
 
 function counterShaft = createCounterShaft()
+    % Function to create the countershaft
     start_pose_x = 0;
     start_pose_z = 250;
 
